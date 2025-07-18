@@ -28,12 +28,52 @@ export class ResultInterpretationAgent {
 
     const prompt = this.createPrompt(input);
 
+    console.log('🔍 Result Interpretation Input:', {
+      originalQuestion: input.originalQuestion,
+      sqlQuery: input.sqlQuery,
+      queryResultsLength: input.queryResults.length,
+      queryResultsPreview: input.queryResults.slice(0, 3),
+    });
+
     try {
       console.log(
         'Calling Result Interpretation Agent with structured output...',
       );
       const result = await structuredLlm.invoke(prompt);
       console.log('Result Interpretation Agent returned successfully.');
+
+      console.log('🔍 Result Interpretation Output:', {
+        summary: result.summary,
+        tableShould_show: result.table.should_show,
+        tableColumnsLength: result.table.columns.length,
+        tableDataLength: result.table.data.length,
+        tableDataPreview: result.table.data.slice(0, 3),
+      });
+
+      // Safeguard: If AI generated empty table data but should_show is true, inject the real data
+      if (
+        result.table.should_show &&
+        (!result.table.data ||
+          result.table.data.length === 0 ||
+          result.table.data.every((row) => Object.keys(row).length === 0))
+      ) {
+        console.log(
+          '🔧 AI generated empty table data, injecting real data from query results',
+        );
+        result.table.data = input.queryResults;
+
+        // Also ensure columns are set correctly
+        if (input.queryResults.length > 0) {
+          result.table.columns = Object.keys(input.queryResults[0]);
+        }
+
+        console.log('🔧 Fixed table data:', {
+          dataLength: result.table.data.length,
+          columnsLength: result.table.columns.length,
+          firstRow: result.table.data[0],
+        });
+      }
+
       return result;
     } catch (error) {
       console.error('Error in Result Interpretation Agent:', error);
@@ -65,6 +105,7 @@ export class ResultInterpretationAgent {
         - If \`should_show\` is true, you MUST populate the \`columns\` and \`data\` fields.
         - The \`columns\` array MUST contain the exact, original keys from the JSON objects in the data (e.g., 'registration_year'). Do NOT modify them.
         - The \`data\` field MUST contain the full, unmodified JSON data from the query results.
+        - IMPORTANT: Copy the exact JSON objects from the query results. Do NOT create empty objects or modify the structure.
       - **charts** (bar_chart, line_chart, pie_chart):
         - For any chart that is insightful, set its \`should_show\` flag to true.
         - If \`should_show\` is true, you MUST also provide a descriptive \`title\` and the complete chart \`data\` (labels and datasets).

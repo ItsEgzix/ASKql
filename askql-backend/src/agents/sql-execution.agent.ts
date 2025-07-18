@@ -89,6 +89,17 @@ export class SQLExecutionAgent {
 
       const dataArray = Array.isArray(result) ? result : [result];
 
+      console.log('🔍 SQL Execution Result - Raw result:', result);
+      console.log('🔍 SQL Execution Result - Data array:', dataArray);
+      console.log(
+        '🔍 SQL Execution Result - Data array length:',
+        dataArray.length,
+      );
+      console.log(
+        '🔍 SQL Execution Result - First 3 rows:',
+        dataArray.slice(0, 3),
+      );
+
       const columnInfo = this.extractColumnInfo(dataArray);
 
       return {

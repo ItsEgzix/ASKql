@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   BarChart,
   Bar,
@@ -27,9 +27,12 @@ import {
   Target,
   Lightbulb,
   AlertTriangle,
+  Edit3,
 } from "lucide-react";
+import VisualizationEditChat from "./VisualizationEditChat";
 
 interface VisualizationData {
+  id: string; // Unique identifier for drill-down functionality
   type: "chart" | "table" | "metric" | "analysis";
   title: string;
   description?: string;
@@ -54,6 +57,18 @@ interface VisualizationData {
   data?: any[]; // optional – required only for tables
   insights?: string[];
   recommendations?: string[];
+  drillDown?: {
+    enabled: boolean;
+    originalQuestion: string;
+    sqlContext: string;
+    dataSource: {
+      table: string;
+      columns: string[];
+      filters?: Record<string, any>;
+    };
+    supportedOperations: Array<"detail" | "filter" | "group" | "trend">;
+    description: string;
+  };
 }
 
 interface AnalysisResult {
@@ -76,6 +91,10 @@ interface AnalysisResult {
 interface DataVisualizationProps {
   visualizations?: VisualizationData[];
   analysis?: AnalysisResult;
+  onVisualizationSelect?: (visualization: VisualizationData) => void;
+  originalSqlQuery?: string;
+  originalQuestion?: string;
+  availableData?: any[];
 }
 
 const COLORS = [
@@ -90,10 +109,72 @@ const COLORS = [
 const DataVisualization: React.FC<DataVisualizationProps> = ({
   visualizations = [],
   analysis,
+  onVisualizationSelect,
+  originalSqlQuery = "",
+  originalQuestion = "",
+  availableData = [],
 }) => {
-  if (!visualizations.length && !analysis) {
+  const [hoveredViz, setHoveredViz] = useState<string | null>(null);
+  const [selectedViz, setSelectedViz] = useState<string | null>(null);
+  const [editingViz, setEditingViz] = useState<VisualizationData | null>(null);
+  const [isEditChatOpen, setIsEditChatOpen] = useState(false);
+  const [localVisualizations, setLocalVisualizations] =
+    useState<VisualizationData[]>(visualizations);
+
+  console.log("📊 DataVisualization received:", {
+    visualizationsCount: visualizations.length,
+    visualizations: visualizations,
+    hasAnalysis: !!analysis,
+  });
+
+  // Log detailed info about each visualization
+  visualizations.forEach((viz, index) => {
+    console.log(`📊 Visualization ${index + 1}:`, {
+      id: viz.id,
+      type: viz.type,
+      title: viz.title,
+      hasData: !!viz.data,
+      dataLength: viz.data?.length || 0,
+      configKeys: Object.keys(viz.config || {}),
+      firstDataRow: viz.data?.[0],
+    });
+  });
+
+  // Update local visualizations when props change
+  React.useEffect(() => {
+    setLocalVisualizations(visualizations);
+  }, [visualizations]);
+
+  if (!localVisualizations.length && !analysis) {
+    console.log("⚠️ No visualizations or analysis to display");
     return null;
   }
+
+  const handleEditVisualization = (viz: VisualizationData) => {
+    // Only allow editing of chart and table types
+    if (viz.type === "chart" || viz.type === "table") {
+      setEditingViz(viz);
+      setIsEditChatOpen(true);
+    }
+  };
+
+  const handleVisualizationUpdate = (newVisualization: any) => {
+    if (!editingViz) return;
+
+    // Update the local visualization
+    setLocalVisualizations((prev) =>
+      prev.map((viz) =>
+        viz.id === editingViz.id
+          ? { ...viz, ...newVisualization, id: editingViz.id }
+          : viz
+      )
+    );
+  };
+
+  const handleCloseEditChat = () => {
+    setIsEditChatOpen(false);
+    setEditingViz(null);
+  };
 
   const renderChart = (viz: VisualizationData) => {
     const { chartType, series, labels, datasets } = viz.config;
@@ -209,7 +290,25 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
   };
 
   const renderTable = (viz: VisualizationData) => {
-    if (!viz.data || !viz.data.length) return null;
+    console.log("🔍 Table viz data:", {
+      hasData: !!viz.data,
+      dataLength: viz.data?.length,
+      data: viz.data,
+      config: viz.config,
+      title: viz.title,
+    });
+
+    if (!viz.data || !viz.data.length) {
+      console.log("❌ No data for table:", viz.title);
+      return (
+        <div className="p-4 text-center">
+          <p className="text-gray-500">No data available to display.</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Data length: {viz.data?.length || 0}
+          </p>
+        </div>
+      );
+    }
 
     const firstRow = viz.data[0];
     const columns = Array.from(
@@ -261,6 +360,13 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
     );
   };
 
+  const handleVisualizationClick = (viz: VisualizationData) => {
+    if (viz.drillDown?.enabled) {
+      setSelectedViz(viz.id);
+      onVisualizationSelect?.(viz);
+    }
+  };
+
   const renderVisualization = (viz: VisualizationData) => {
     const getIcon = () => {
       switch (viz.config.chartType) {
@@ -275,18 +381,75 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
       }
     };
 
+    const isHovered = hoveredViz === viz.id;
+    const isSelected = selectedViz === viz.id;
+    const isInteractive = viz.drillDown?.enabled;
+
     return (
       <div
-        key={viz.title}
-        className="bg-white rounded-lg border border-gray-200 p-6 mb-6"
+        key={viz.id}
+        className={`bg-white rounded-lg border p-6 mb-6 transition-all duration-200 ${
+          isInteractive
+            ? "cursor-pointer hover:shadow-lg border-gray-200 hover:border-blue-300"
+            : "border-gray-200"
+        } ${isSelected ? "ring-2 ring-blue-500 border-blue-500" : ""} ${
+          isHovered ? "shadow-md" : ""
+        }`}
+        onMouseEnter={() => isInteractive && setHoveredViz(viz.id)}
+        onMouseLeave={() => setHoveredViz(null)}
+        onClick={() => handleVisualizationClick(viz)}
       >
-        <div className="flex items-center gap-2 mb-4">
-          {getIcon()}
-          <h3 className="text-lg font-semibold text-gray-900">{viz.title}</h3>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            {getIcon()}
+            <h3 className="text-lg font-semibold text-gray-900">{viz.title}</h3>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Edit Button - Always available for charts */}
+            {viz.type === "chart" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditVisualization(viz);
+                }}
+                className="flex items-center gap-1 px-3 py-1 text-xs text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-full transition-colors"
+                title="Edit this visualization with AI"
+              >
+                <Edit3 className="h-3 w-3" />
+                Edit with AI
+              </button>
+            )}
+
+            {isInteractive && (
+              <>
+                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                  Click to explore
+                </span>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              </>
+            )}
+          </div>
         </div>
 
         {viz.description && (
           <p className="text-gray-600 mb-4">{viz.description}</p>
+        )}
+
+        {isInteractive && viz.drillDown && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">{viz.drillDown.description}</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {viz.drillDown.supportedOperations.map((op) => (
+                <span
+                  key={op}
+                  className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded"
+                >
+                  {op}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
 
         <div className="mb-4">
@@ -404,7 +567,21 @@ const DataVisualization: React.FC<DataVisualizationProps> = ({
   return (
     <div className="space-y-8">
       {analysis && renderAnalysis(analysis)}
-      {visualizations.map(renderVisualization)}
+      {localVisualizations.map(renderVisualization)}
+
+      {/* Edit Chat Modal */}
+      {editingViz &&
+        (editingViz.type === "chart" || editingViz.type === "table") && (
+          <VisualizationEditChat
+            isOpen={isEditChatOpen}
+            onClose={handleCloseEditChat}
+            visualization={editingViz as any} // Type assertion for compatible subset
+            availableData={availableData}
+            originalSqlQuery={originalSqlQuery}
+            originalQuestion={originalQuestion}
+            onVisualizationUpdate={handleVisualizationUpdate}
+          />
+        )}
     </div>
   );
 };

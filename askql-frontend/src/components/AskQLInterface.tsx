@@ -11,17 +11,19 @@ import {
   Wifi,
   WifiOff,
   Trash2,
-  Brain,
 } from "lucide-react";
 import { useAskQLWebSocket } from "@/hooks/useAskQLWebSocket";
 import {
   askQLAPI,
-  type QuerySuggestions,
   type AskQLResponse,
+  type VisualizationDrillDownResponse,
+  type Visualization,
 } from "@/lib/askql-api";
 import DataVisualization from "./DataVisualization";
 import WorkflowProgress from "./WorkflowProgress";
 import WorkflowTimelineItem from "./WorkflowTimelineItem";
+import VisualizationDrillDown from "./VisualizationDrillDown";
+import FakeAIThoughtProcess from "./FakeAIThoughtProcess";
 
 const AskQLInterface: React.FC = () => {
   const [question, setQuestion] = useState("");
@@ -31,6 +33,15 @@ const AskQLInterface: React.FC = () => {
   const [nonStreamResult, setNonStreamResult] = useState<AskQLResponse | null>(
     null
   );
+  const [showFakeThoughtProcess, setShowFakeThoughtProcess] = useState(false);
+
+  // Drill-down state
+  const [selectedVisualization, setSelectedVisualization] =
+    useState<Visualization | null>(null);
+  const [isDrillDownOpen, setIsDrillDownOpen] = useState(false);
+  const [drillDownResults, setDrillDownResults] = useState<
+    VisualizationDrillDownResponse[]
+  >([]);
 
   const { status, steps, result, connect, disconnect, startQuery, clearSteps } =
     useAskQLWebSocket();
@@ -56,11 +67,22 @@ const AskQLInterface: React.FC = () => {
     loadSuggestions();
   }, []);
 
+  useEffect(() => {
+    // Hide fake thought process when results are ready
+    if (result || nonStreamResult) {
+      setShowFakeThoughtProcess(false);
+    }
+  }, [result, nonStreamResult]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
 
+    // Reset states for new query
+    setNonStreamResult(null);
+    clearSteps();
     setIsLoading(true);
+    setShowFakeThoughtProcess(true);
 
     try {
       if (showStream && status.isConnected) {
@@ -123,6 +145,30 @@ const AskQLInterface: React.FC = () => {
       default:
         return "border-l-orange-500 bg-orange-50";
     }
+  };
+
+  const handleVisualizationSelect = (visualization: any) => {
+    setSelectedVisualization(visualization);
+    setIsDrillDownOpen(true);
+  };
+
+  const handleDrillDownResult = (result: VisualizationDrillDownResponse) => {
+    setDrillDownResults((prev) => [...prev, result]);
+    setIsDrillDownOpen(false);
+
+    if (result.success) {
+      // Optional: Show a success message or update UI
+      console.log("Drill-down completed successfully", result);
+    }
+  };
+
+  const closeDrillDown = () => {
+    setIsDrillDownOpen(false);
+    setSelectedVisualization(null);
+  };
+
+  const handleFakeThoughtProcessComplete = () => {
+    setShowFakeThoughtProcess(false);
   };
 
   return (
@@ -240,12 +286,20 @@ const AskQLInterface: React.FC = () => {
         </form>
       </div>
 
-      {/* Workflow Steps */}
-      {isClient && steps.length > 0 && (
+      {/* AI Thought Process */}
+      {isClient && showFakeThoughtProcess && (
+        <FakeAIThoughtProcess
+          isActive={showFakeThoughtProcess}
+          onComplete={handleFakeThoughtProcessComplete}
+        />
+      )}
+
+      {/* Original Workflow Steps (fallback for when WebSocket provides real steps) */}
+      {isClient && !showFakeThoughtProcess && steps.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-800">
-              AI Thought Process
+              Real-time Process Steps
             </h3>
             <button
               onClick={clearSteps}
@@ -292,6 +346,19 @@ const AskQLInterface: React.FC = () => {
               result?.visualizations || nonStreamResult?.visualizations
             }
             analysis={result?.analysis || nonStreamResult?.analysis}
+            onVisualizationSelect={handleVisualizationSelect}
+            originalSqlQuery={
+              result?.metadata?.sqlQuery ||
+              nonStreamResult?.metadata?.sqlQuery ||
+              ""
+            }
+            originalQuestion={question}
+            availableData={
+              // Try to get the raw data from the first table visualization
+              (result?.visualizations || nonStreamResult?.visualizations)?.find(
+                (viz: any) => viz.type === "table"
+              )?.data || []
+            }
           />
 
           {(result?.metadata?.sqlQuery ||
@@ -307,6 +374,66 @@ const AskQLInterface: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Drill-down Results */}
+      {drillDownResults.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <Database className="h-6 w-6 text-green-500" />
+            Drill-down Results
+          </h3>
+
+          {drillDownResults.map((result, index) => (
+            <div key={index} className="mb-6 last:mb-0">
+              {result.success ? (
+                <div>
+                  <h4 className="font-medium text-gray-700 mb-2">
+                    Result #{index + 1}
+                  </h4>
+                  <DataVisualization
+                    visualizations={[result.visualization]}
+                    onVisualizationSelect={handleVisualizationSelect}
+                  />
+                  <div className="mt-2 text-sm text-gray-600">
+                    Execution time: {result.metadata.executionTime}ms | Rows:{" "}
+                    {result.metadata.rowCount}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-red-50 border border-red-200 text-red-900 p-4 rounded-lg">
+                  <h4 className="font-medium text-red-800 mb-2">
+                    Drill-down Error #{index + 1}
+                  </h4>
+                  <p>{result.error}</p>
+                </div>
+              )}
+            </div>
+          ))}
+
+          <button
+            onClick={() => setDrillDownResults([])}
+            className="mt-4 px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Clear Results
+          </button>
+        </div>
+      )}
+
+      {/* Drill-down Modal */}
+      {selectedVisualization && (
+        <VisualizationDrillDown
+          visualization={selectedVisualization}
+          isOpen={isDrillDownOpen}
+          onClose={closeDrillDown}
+          onDrillDownResult={handleDrillDownResult}
+          availableData={
+            // Try to get the raw data from the first table visualization
+            (result?.visualizations || nonStreamResult?.visualizations)?.find(
+              (viz: any) => viz.type === "table"
+            )?.data || []
+          }
+        />
       )}
     </div>
   );

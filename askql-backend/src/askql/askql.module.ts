@@ -11,6 +11,8 @@ import { NLToSQLAgent } from '../agents/nl-to-sql.agent';
 import { SQLValidationAgent } from '../agents/sql-validation.agent';
 import { SQLExecutionAgent } from '../agents/sql-execution.agent';
 import { ResultInterpretationAgent } from '../agents/result-interpretation.agent';
+import { VisualizationEditAgent } from '../agents/visualization-edit.agent';
+import { DrillDownAgent } from '../agents/drill-down.agent';
 import { AskQLGateway } from '../websocket/askql.gateway';
 import { WorkflowStreamingService } from '../websocket/workflow-streaming.service';
 
@@ -28,6 +30,8 @@ import { WorkflowStreamingService } from '../websocket/workflow-streaming.servic
     SQLValidationAgent,
     SQLExecutionAgent,
     ResultInterpretationAgent,
+    VisualizationEditAgent,
+    DrillDownAgent,
     AskQLWorkflow,
     AskQLService,
     AskQLGateway,

@@ -22,6 +22,7 @@ export interface ChartData {
 }
 
 export interface Visualization {
+  id: string; // Unique identifier for drill-down functionality
   type: "chart" | "table";
   title: string;
   config: {
@@ -39,6 +40,18 @@ export interface Visualization {
     }[];
   };
   data?: any[]; // Raw data for tables
+  drillDown?: {
+    enabled: boolean;
+    originalQuestion: string;
+    sqlContext: string;
+    dataSource: {
+      table: string;
+      columns: string[];
+      filters?: Record<string, any>;
+    };
+    supportedOperations: Array<"detail" | "filter" | "group" | "trend">;
+    description: string;
+  };
 }
 
 export interface AskQLResponse {
@@ -73,6 +86,51 @@ export interface SchemaInfo {
 
 export interface QuerySuggestions {
   suggestions: string[];
+}
+
+export interface VisualizationDrillDownRequest {
+  visualizationId: string;
+  operation: "detail" | "filter" | "group" | "trend";
+  parameters?: {
+    filters?: Record<string, any>;
+    groupBy?: string[];
+    timeRange?: { start: string; end: string };
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+    selectedValue?: any; // Value clicked in the visualization
+    selectedLabel?: string; // Label clicked in the visualization
+  };
+  // Enhanced context for drill-down processing
+  visualization?: {
+    id: string;
+    type: "chart" | "table";
+    title: string;
+    config: any;
+    data?: any[];
+    drillDown?: {
+      originalQuestion: string;
+      sqlContext: string;
+      dataSource: {
+        table: string;
+        columns: string[];
+        filters?: Record<string, any>;
+      };
+      supportedOperations: Array<"detail" | "filter" | "group" | "trend">;
+    };
+  };
+  availableData?: any[]; // Current data for context
+}
+
+export interface VisualizationDrillDownResponse {
+  success: boolean;
+  visualization: Visualization;
+  metadata: {
+    executionTime: number;
+    sqlQuery: string;
+    rowCount: number;
+  };
+  error?: string;
 }
 
 class AskQLAPI {
@@ -110,6 +168,38 @@ class AskQLAPI {
 
   async getStreamStatus(): Promise<{ activeConnections: number }> {
     const response = await this.api.get("/askql/stream/status");
+    return response.data;
+  }
+
+  async processDrillDown(
+    request: VisualizationDrillDownRequest
+  ): Promise<VisualizationDrillDownResponse> {
+    const response = await this.api.post(
+      "/askql/visualization/drill-down",
+      request
+    );
+    return response.data;
+  }
+
+  async editVisualization(request: {
+    userRequest: string;
+    currentVisualization: any;
+    availableData: any[];
+    originalSqlQuery: string;
+    originalQuestion: string;
+  }): Promise<any> {
+    const response = await this.api.post("/askql/edit-visualization", request);
+    return response.data;
+  }
+
+  async getVisualizationSuggestions(request: {
+    visualization: any;
+    availableData: any[];
+  }): Promise<{ success: boolean; suggestions: string[] }> {
+    const response = await this.api.post(
+      "/askql/visualization-suggestions",
+      request
+    );
     return response.data;
   }
 }
